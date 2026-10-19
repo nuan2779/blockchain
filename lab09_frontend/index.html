@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Session 09 - Viem Frontend DApp</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 650px; margin: 30px auto; padding: 20px; line-height: 1.5; background: #0f172a; color: #f8fafc; }
+    .card { background: #1e293b; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #334155; }
+    button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 16px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+    button:disabled { background: #64748b; cursor: not-allowed; }
+    input { width: 100%; padding: 8px; margin: 8px 0 16px 0; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; box-sizing: border-box; }
+    .status { padding: 10px; border-radius: 6px; font-weight: bold; margin-top: 10px; }
+    .PENDING { background: #ca8a04; color: #fff; }
+    .SUCCESS { background: #16a34a; color: #fff; }
+    .ERROR { background: #dc2626; color: #fff; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>ClassToken Frontend (viem)</h2>
+
+  <!-- 1. Kết nối ví -->
+  <div class="card">
+    <h3>1. Ví kết nối</h3>
+    <button id="connectBtn">Connect MetaMask</button>
+    <p id="accountInfo">Chưa kết nối ví</p>
+  </div>
+
+  <!-- 2. Tải thông tin Token -->
+  <div class="card">
+    <h3>2. Tải Token (ClassToken)</h3>
+    <label>Địa chỉ hợp đồng Token:</label>
+    <input type="text" id="tokenAddressInput" placeholder="0x...">
+    <button id="loadTokenBtn">Load Token</button>
+    <div id="tokenInfo" style="margin-top: 12px; display: none;">
+      <p>Tên: <strong id="tokenName"></strong> (<span id="tokenSymbol"></span>)</p>
+      <p>Số dư của bạn: <strong id="tokenBalance"></strong> <span id="tokenSymbolDisplay"></span></p>
+    </div>
+  </div>
+
+  <!-- 3. Chuyển CTK -->
+  <div class="card">
+    <h3>3. Chuyển CTK</h3>
+    <label>Địa chỉ người nhận:</label>
+    <input type="text" id="recipientInput" placeholder="0x...">
+    <label>Số lượng:</label>
+    <input type="number" id="amountInput" placeholder="Ví dụ: 10">
+    <button id="sendBtn" disabled>Send</button>
+    <div id="statusBox" class="status" style="display: none;"></div>
+  </div>
+
+  <!-- 4. Lịch sử sự kiện (getLogs) -->
+  <div class="card">
+    <h3>4. Lịch sử giao dịch (5000 block gần nhất)</h3>
+    <table>
+      <thead>
+        <tr><th>Từ</th><th>Đến</th><th>Số lượng</th></tr>
+      </thead>
+      <tbody id="eventsList"></tbody>
+    </table>
+  </div>
+
+  <!-- Import viem qua CDN -->
+  <script type="module">
+    import { createPublicClient, createWalletClient, custom, http, parseAbi, parseEther, formatUnits } from "https://esm.sh/viem@2.7.1";
+
+    const TRUSTKEYS_CHAIN = {
+      id: 11968,
+      name: "TrustKeys L1 Testnet",
+      nativeCurrency: { name: "TrustKeys Coin", symbol: "TKC", decimals: 18 },
+      rpcUrls: { default: { http: ["https://l1testnet.trustkeys.network"] } }
+    };
+
+    const classTokenAbi = parseAbi([
+      "function name() view returns (string)",
+      "function symbol() view returns (string)",
+      "function decimals() view returns (uint8)",
+      "function balanceOf(address account) view returns (uint256)",
+      "function transfer(address to, uint256 amount) returns (bool)",
+      "event Transfer(address indexed from, address indexed to, uint256 value)"
+    ]);
+
+    // Public Client (chỉ đọc, miễn phí qua RPC)
+    const publicClient = createPublicClient({
+      chain: TRUSTKEYS_CHAIN,
+      transport: http()
+    });
+
+    let walletClient;
+    let userAddress = null;
+    let tokenContractAddress = null;
+    let tokenDecimals = 18;
+
+    // 1. Xử lý kết nối ví
+    document.getElementById("connectBtn").onclick = async () => {
+      if (!window.ethereum) return alert("Vui lòng cài đặt MetaMask!");
+      try {
+        walletClient = createWalletClient({
+          chain: TRUSTKEYS_CHAIN,
+          transport: custom(window.ethereum)
+        });
+
+        // Chuyển sang mạng TrustKeys nếu chưa chọn đúng
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x2ec0" }] // 11968 hex
+        }).catch(async (switchError) => {
+          if (switchError.code === 4902) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: "0x2ec0",
+                chainName: TRUSTKEYS_CHAIN.name,
+                rpcUrls: ["https://l1testnet.trustkeys.network"],
+                nativeCurrency: TRUSTKEYS_CHAIN.nativeCurrency
+              }]
+            });
+          }
+        });
+
+        const [account] = await walletClient.requestAddresses();
+        userAddress = account;
+        document.getElementById("accountInfo").innerText = "Ví kết nối: " + account;
+        document.getElementById("sendBtn").disabled = false;
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    // 2. Tải thông tin Token qua public client (readContract)
+    document.getElementById("loadTokenBtn").onclick = async () => {
+      tokenContractAddress = document.getElementById("tokenAddressInput").value.trim();
+      if (!tokenContractAddress) return alert("Vui lòng nhập địa chỉ hợp đồng!");
+
+      try {
+        const [name, symbol, decimals] = await Promise.all([
+          publicClient.readContract({ address: tokenContractAddress, abi: classTokenAbi, functionName: "name" }),
+          publicClient.readContract({ address: tokenContractAddress, abi: classTokenAbi, functionName: "symbol" }),
+          publicClient.readContract({ address: tokenContractAddress, abi: classTokenAbi, functionName: "decimals" })
+        ]);
+
+        tokenDecimals = decimals;
+        document.getElementById("tokenName").innerText = name;
+        document.getElementById("tokenSymbol").innerText = symbol;
+        document.getElementById("tokenSymbolDisplay").innerText = symbol;
+        document.getElementById("tokenInfo").style.display = "block";
+
+        await reloadBalance();
+        await loadEvents();
+      } catch (err) {
+        alert("Lỗi tải token: " + err.message);
+      }
+    };
+
+    async function reloadBalance() {
+      if (!userAddress || !tokenContractAddress) return;
+      const bal = await publicClient.readContract({
+        address: tokenContractAddress,
+        abi: classTokenAbi,
+        functionName: "balanceOf",
+        args: [userAddress]
+      });
+      document.getElementById("tokenBalance").innerText = formatUnits(bal, tokenDecimals);
+    }
+
+    // 3. Quy trình chuyển tiền (Simulate -> Sign/Write -> WaitForReceipt)
+    document.getElementById("sendBtn").onclick = async () => {
+      const recipient = document.getElementById("recipientInput").value.trim();
+      const amount = document.getElementById("amountInput").value;
+      const statusBox = document.getElementById("statusBox");
+
+      if (!recipient || !amount) return alert("Vui lòng điền đủ thông tin!");
+
+      statusBox.style.display = "block";
+      statusBox.className = "status PENDING";
+      statusBox.innerText = "Trạng thái: SIMULATING...";
+
+      try {
+        const valueInWei = parseEther(amount.toString());
+
+        // Mô phỏng trước trên RPC để bắt lỗi revert trước khi người dùng ký
+        const { request } = await publicClient.simulateContract({
+          account: userAddress,
+          address: tokenContractAddress,
+          abi: classTokenAbi,
+          functionName: "transfer",
+          args: [recipient, valueInWei]
+        });
+
+        // Ví hiện popup ký giao dịch
+        statusBox.innerText = "Trạng thái: Vui lòng xác nhận giao dịch trên ví MetaMask...";
+        const hash = await walletClient.writeContract(request);
+
+        statusBox.innerText = `Trạng thái: PENDING (Hash: ${hash.slice(0, 10)}...)`;
+
+        // Chờ hóa đơn xác nhận on-chain
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+        statusBox.className = "status SUCCESS";
+        statusBox.innerText = `Trạng thái: SUCCESS (Đã xác nhận tại Block ${receipt.blockNumber})`;
+
+        // Cập nhật lại số dư và danh sách log
+        await reloadBalance();
+        await loadEvents();
+      } catch (err) {
+        statusBox.className = "status ERROR";
+        statusBox.innerText = "Lỗi: " + (err.shortMessage || err.message);
+      }
+    };
+
+    // 4. Lấy sự kiện qua getContractEvents (5000 block gần nhất)
+    async function loadEvents() {
+      if (!tokenContractAddress) return;
+      const currentBlock = await publicClient.getBlockNumber();
+      const fromBlock = currentBlock > 5000n ? currentBlock - 5000n : 0n;
+
+      const logs = await publicClient.getContractEvents({
+        address: tokenContractAddress,
+        abi: classTokenAbi,
+        eventName: "Transfer",
+        fromBlock: fromBlock,
+        toBlock: "latest"
+      });
+
+      const tbody = document.getElementById("eventsList");
+      tbody.innerHTML = "";
+      logs.slice(-5).reverse().forEach(log => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${log.args.from.slice(0, 6)}...${log.args.from.slice(-4)}</td>
+          <td>${log.args.to.slice(0, 6)}...${log.args.to.slice(-4)}</td>
+          <td>${formatUnits(log.args.value, tokenDecimals)} CTK</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+  </script>
+</body>
+</html>

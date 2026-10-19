@@ -12,8 +12,8 @@
 ---
 
 ### 2. Thông tin triển khai On-chain
-- **ClassToken (ERC-20):** `0x_dia_chi_ClassToken_vua_deploy`
-- **ClassBadge (ERC-721):** `0x_dia_chi_ClassBadge_vua_deploy`
+- **ClassToken (ERC-20):** `0x632b509524B42dA1372F533017a7Ee811090a93B`
+- **ClassBadge (ERC-721):** `0xa11fDc103e814928eE020FDCD81B5fC2e5763707`
 - **Tài khoản Deployer:** `0xC3CF9f66dB715769Fe0C902d136c66cDeE3000da`
 
 ---
