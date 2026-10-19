@@ -44,23 +44,23 @@
 
 ### 4. Trả lời câu hỏi lý thuyết (Q1 – Q7)
 
-- **Q1: Ở web2, "đọc số dư" gọi database máy chủ. Ở đây, đọc số dư gọi tới đâu, và vì sao miễn phí?**
-  Đọc số dư gọi trực tiếp tới node RPC của TrustKeys thông qua phương thức `eth_call`[cite: 14]. Thao tác này chỉ truy vấn trạng thái công khai hiện tại của blockchain mà không làm thay đổi trạng thái lưu trữ (state), không tạo block giao dịch mới nên các node RPC phục vụ hoàn toàn miễn phí không tốn gas[cite: 14].
+Q1: Ở web2, "đọc số dư" gọi database máy chủ. Ở đây, đọc số dư gọi tới đâu, và vì sao miễn phí?
+  Đọc số dư gọi trực tiếp tới node RPC của TrustKeys thông qua phương thức `eth_call`. Thao tác này chỉ truy vấn trạng thái công khai hiện tại của blockchain mà không làm thay đổi trạng thái lưu trữ (state), không tạo block giao dịch mới nên các node RPC phục vụ hoàn toàn miễn phí không tốn gas.
 
-- **Q2: Vì sao con số extraData 97 bytes quan trọng trên TrustKeys, và vì sao viem đọc được block trong khi web3.py thô sẽ lỗi?**
-  `extraData` có độ dài lớn hơn 32 bytes (cụ thể là 97 bytes) là dấu hiệu cho thấy TrustKeys là chuỗi Proof-of-Authority (PoA / Clique), trong đó 65 bytes cuối cùng chứa chữ ký của validator[cite: 14]. Thư viện `viem`, `ethers` và MetaMask đã tích hợp sẵn cơ chế phân tích cấu trúc khối PoA; trong khi thư viện `web3.py` nguyên bản chỉ mặc định hỗ trợ chuẩn PoW (tối đa 32 bytes) nên sẽ quăng ngoại lệ nếu không cài thêm middleware `ExtraDataToPOAMiddleware`[cite: 14].
+Q2: Vì sao con số extraData 97 bytes quan trọng trên TrustKeys, và vì sao viem đọc được block trong khi web3.py thô sẽ lỗi?
+  `extraData` có độ dài lớn hơn 32 bytes (cụ thể là 97 bytes) là dấu hiệu cho thấy TrustKeys là chuỗi Proof-of-Authority (PoA / Clique), trong đó 65 bytes cuối cùng chứa chữ ký của validator. Thư viện `viem`, `ethers` và MetaMask đã tích hợp sẵn cơ chế phân tích cấu trúc khối PoA; trong khi thư viện `web3.py` nguyên bản chỉ mặc định hỗ trợ chuẩn PoW (tối đa 32 bytes) nên sẽ quăng ngoại lệ nếu không cài thêm middleware `ExtraDataToPOAMiddleware`.
 
-- **Q3: Khác biệt giữa provider và signer (public client vs wallet client)?**
-  Provider (`public client`) chỉ đọc dữ liệu trạng thái công khai qua RPC và không quản lý khóa riêng tư[cite: 10, 14]. Signer (`wallet client`) nắm giữ hoặc kết nối trực tiếp với khóa riêng tư để ký dữ liệu và phát các giao dịch ghi (`write`) làm thay đổi trạng thái blockchain[cite: 10, 14]. Mọi thao tác đọc đều không cần signer[cite: 14].
+Q3: Khác biệt giữa provider và signer (public client vs wallet client)?
+  Provider (`public client`) chỉ đọc dữ liệu trạng thái công khai qua RPC và không quản lý khóa riêng tư. Signer (`wallet client`) nắm giữ hoặc kết nối trực tiếp với khóa riêng tư để ký dữ liệu và phát các giao dịch ghi (`write`) làm thay đổi trạng thái blockchain. Mọi thao tác đọc đều không cần signer.
 
-- **Q4: Vì sao chúng ta gọi simulateContract trước writeContract? Vì sao không cập nhật số dư trước khi có receipt?**
-  Hàm `simulateContract` thực hiện cuộc gọi giả lập cục bộ trên node RPC để bắt sớm các lỗi revert (nếu có) trước khi người dùng ký, tránh việc gửi giao dịch lỗi lên chuỗi làm mất phí gas vô ích[cite: 12, 14, 15]. Không cập nhật số dư sớm vì giao dịch ở trạng thái pending có thể bị từ chối, bị revert hoặc mạng gặp tình trạng tổ chức lại khối (re-org); chỉ `receipt` sau khi block được đóng mới là cơ sở chính xác khẳng định giao dịch đã thành công[cite: 12, 15].
+Q4: Vì sao chúng ta gọi simulateContract trước writeContract? Vì sao không cập nhật số dư trước khi có receipt?
+  Hàm `simulateContract` thực hiện cuộc gọi giả lập cục bộ trên node RPC để bắt sớm các lỗi revert (nếu có) trước khi người dùng ký, tránh việc gửi giao dịch lỗi lên chuỗi làm mất phí gas vô ích. Không cập nhật số dư sớm vì giao dịch ở trạng thái pending có thể bị từ chối, bị revert hoặc mạng gặp tình trạng tổ chức lại khối (re-org); chỉ `receipt` sau khi block được đóng mới là cơ sở chính xác khẳng định giao dịch đã thành công.
 
-- **Q5: Cửa sổ getLogs là 5000 block; nếu hỏi từ block 0 trên chain đông sẽ hỏng gì, và cách khắc phục thật là gì?**
-  Truy vấn toàn bộ lịch sử từ block 0 trên một mạng lưới lớn với hàng triệu block sẽ làm node RPC bị quá tải, dẫn đến lỗi timeout hoặc bị ngắt kết nối do giới hạn tải (rate-limit)[cite: 12, 15]. Cách xử lý thực tế trong môi trường production là phân trang theo cửa sổ block cố định, hoặc sử dụng các giải pháp indexer chuyên dụng (như The Graph, Ponder) để lập chỉ mục dữ liệu vào database và truy vấn qua GraphQL[cite: 12, 15].
+Q5: Cửa sổ getLogs là 5000 block; nếu hỏi từ block 0 trên chain đông sẽ hỏng gì, và cách khắc phục thật là gì?
+  Truy vấn toàn bộ lịch sử từ block 0 trên một mạng lưới lớn với hàng triệu block sẽ làm node RPC bị quá tải, dẫn đến lỗi timeout hoặc bị ngắt kết nối do giới hạn tải (rate-limit)[cite: 12, 15]. Cách xử lý thực tế trong môi trường production là phân trang theo cửa sổ block cố định, hoặc sử dụng các giải pháp indexer chuyên dụng (như The Graph, Ponder) để lập chỉ mục dữ liệu vào database và truy vấn qua GraphQL.
 
-- **Q6: Ảnh huy hiệu về dưới dạng data-URI (data:image/svg+xml;base64,...), trình duyệt hiển thị thế nào khi không có gateway IPFS và máy chủ ảnh?**
-  Chuỗi data-URI là định dạng tự chứa nội dung (self-describing)[cite: 15]. Bộ render của trình duyệt tự động giải mã các byte base64 thành mã nguồn vector SVG nội tại và vẽ trực tiếp lên màn hình mà không cần thực hiện bất kỳ lệnh gọi mạng (HTTP request) nào ra bên ngoài[cite: 15].
+Q6: Ảnh huy hiệu về dưới dạng data-URI (data:image/svg+xml;base64,...), trình duyệt hiển thị thế nào khi không có gateway IPFS và máy chủ ảnh?
+  Chuỗi data-URI là định dạng tự chứa nội dung (self-describing). Bộ render của trình duyệt tự động giải mã các byte base64 thành mã nguồn vector SVG nội tại và vẽ trực tiếp lên màn hình mà không cần thực hiện bất kỳ lệnh gọi mạng (HTTP request) nào ra bên ngoài.
 
-- **Q7: wagmi thêm gì so với gọi viem thủ công, và dùng lại nguyên vẹn cái gì?**
-  `wagmi` bổ sung hệ thống React Hooks, lớp quản lý trạng thái, tầng trừu tượng hóa ví (connectors) và tích hợp sẵn bộ nhớ đệm TanStack Query (hỗ trợ tự động refetch, loại bỏ request trùng lặp, cờ quản lý loading/error)[cite: 13, 14, 15]. Nó tái sử dụng nguyên vẹn các viem client, đối tượng cấu hình chuỗi (`defineChain`) và định dạng ABI[cite: 14, 15].
+Q7: wagmi thêm gì so với gọi viem thủ công, và dùng lại nguyên vẹn cái gì?
+  `wagmi` bổ sung hệ thống React Hooks, lớp quản lý trạng thái, tầng trừu tượng hóa ví (connectors) và tích hợp sẵn bộ nhớ đệm TanStack Query (hỗ trợ tự động refetch, loại bỏ request trùng lặp, cờ quản lý loading/error). Nó tái sử dụng nguyên vẹn các viem client, đối tượng cấu hình chuỗi (`defineChain`) và định dạng ABI.
